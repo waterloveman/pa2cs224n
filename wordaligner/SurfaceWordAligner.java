@@ -1,7 +1,7 @@
 package cs224n.wordaligner;  
 
 import cs224n.util.*;
-import java.util.List;
+import java.util.*;
 
 /**
 * Simple alignment baseline which maps french positions to english positions.
@@ -24,6 +24,7 @@ public class SurfaceWordAligner extends WordAligner
 		Alignment alignment = new Alignment();
 		int numFrenchWords = sentencePair.getFrenchWords().size();
 		int numEnglishWords = sentencePair.getEnglishWords().size();
+		Set<Integer> used = new HashSet<Integer>();
 		for (int frenchPosition = 0; frenchPosition < numFrenchWords; frenchPosition++)
 		{
 			String f = sentencePair.getFrenchWords().get(frenchPosition);
@@ -33,23 +34,30 @@ public class SurfaceWordAligner extends WordAligner
 			{
 				String e = sentencePair.getEnglishWords().get(englishPosition);
 				double prob = getWordAlignmentProb(f, e);
-				if(prob > bestProb) {
+				if(prob > bestProb || (prob == bestProb && used.contains(bestEngPos)))
+				{
 					bestProb = prob;
 					bestEngPos = englishPosition;
 				}
 			}
+			used.add(bestEngPos);
 			alignment.addAlignment(bestEngPos, frenchPosition, true);
 		}
 		return alignment;
 	}
 	
-	public double getWordAlignmentProb(String targetWord, String sourceWord)
+	public double getWordAlignmentProb(String sourceWord, String targetWord)
 	{
-		double count = english.getCount(targetWord);
-		if(count == 0) {
+		if(targetWord.equals("the") && sourceWord.equals("le")) {
+			System.out.print("");
+		}
+		double en = english.getCount(targetWord);
+		double fr = french.getCount(sourceWord);
+		if(en == 0 || fr == 0) {
 			return 0;
 		}
-		double p = dummy.getCount(sourceWord, targetWord) / count;
+		double both = dummy.getCount(sourceWord, targetWord);
+		double p = (both) / (en * fr);
 		return p;
 	}
 	
