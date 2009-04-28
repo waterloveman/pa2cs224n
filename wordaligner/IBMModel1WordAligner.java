@@ -43,10 +43,8 @@ import java.util.List;
       for (int i = 0; i < sourceSentence.size(); i++) {
 	String sourceWord = sourceSentence.get(i);
 	int curAlignTarget = alignment.getAlignedTarget(i);
-	if (curAlignTarget == -1)
-	  pairProduct *= alignmentProbs.getCount(sourceWord, NULL_WORD);
-	else
-	  pairProduct *= alignmentProbs.getCount(sourceWord, targetSentence.get(curAlignTarget));
+	String targetWord = (curAlignTarget == -1 ? NULL_WORD : targetSentence.get(curAlignTarget));
+	pairProduct *= alignmentProbs.getCount(sourceWord, targetWord);
       }
       double thingy = normalFactor * pairProduct;
       return normalFactor * pairProduct;
