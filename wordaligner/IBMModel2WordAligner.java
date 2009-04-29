@@ -10,8 +10,9 @@ import java.util.List;
 public class IBMModel2WordAligner extends WordAligner {
 	
 	private CounterMap<String,String> alignmentProbs, alignmentCounts;
-	private double[][][][] dProbs, dCounts;
-	public static int MAX_SENTENCE_LENGTH = 50;
+	//private double[][][][] dProbs, dCounts;
+	private double[] dProbs, dCounts;
+	public static int MAX_SENTENCE_LENGTH = 3;
 	
 	public Alignment alignSentencePair(SentencePair sentencePair) {
 		Alignment alignment = new Alignment();
@@ -68,31 +69,34 @@ public class IBMModel2WordAligner extends WordAligner {
 		return alignmentProbs;
 	}
 	
-	private double bucket(int sourcePos, int targetPos, int sourceLen, int targetLen)
+	private int bucket(double sourcePos, double targetPos, double sourceLen, double targetLen)
 	{
 		
 		//TODO: create bucketed value
 		//should be a static function (i.e. not learned)
+		if(sourceLen != targetLen) {
+			System.out.print("");
+		}
 		double bval = sourcePos - targetPos * (sourceLen / targetLen);
-		if(Math.abs(bval) <= 0.03) {
+		int i = (int) Math.abs(Math.round(bval));
+		if(i <= 3) {
+			return 0;
+		}
+		else if(i <= 6) {
 			return 1;
 		}
-		return 0.9;
-	}
-	
-	private double distortion(double bucket)
-	{
-		//TODO
-		//should learn what to do
-		return bucket;
+		else if(i <= 9) {
+			return 2;
+		}
+		return 3;
 	}
 
 	public void train(List<SentencePair> trainingPairs) {
 		alignmentProbs = new CounterMap<String,String>();
 		alignmentCounts = new CounterMap<String,String>();
-		dProbs = new double[MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1];
-		dCounts = new double[MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1];
-		double[][][] totalD = new double[MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1][MAX_SENTENCE_LENGTH+1];
+		dProbs = new double[MAX_SENTENCE_LENGTH+2];
+		dCounts = new double[MAX_SENTENCE_LENGTH+2];
+		double totalD = 0.0;
 		
 		Counter<String> targetWordCounts = new Counter<String>();
 		
@@ -118,20 +122,10 @@ public class IBMModel2WordAligner extends WordAligner {
 		}
 		
 		//Initialize distortion
-		for(int a = 0; a <= MAX_SENTENCE_LENGTH; a++) {
-			double u = 1.0;
-			if(a > 0) {
-				u = (double)(1.0/((double)a));
-			}
-			for(int b = 0; b <= MAX_SENTENCE_LENGTH; b++) {
-				for(int c = 0; c <= a; c++) {
-					totalD[c][a][b] = 0.0;
-					for(int d = 0; d <= b; d++) {
-						dProbs[c][d][a][b] = u;
-						dCounts[c][d][a][b] = 0.0;
-					}
-				}
-			}
+		//dProbs[0] = 1.0;
+		for(int i = 0; i <= MAX_SENTENCE_LENGTH+1; i++) {
+			dProbs[i] = 1.0 / (double) (i+1);
+			dCounts[i] = 0.0;
 		}
 		
 		//Continue until convergence
@@ -157,34 +151,34 @@ public class IBMModel2WordAligner extends WordAligner {
 					int targetPos = 0;
 					for (String target : targetWords) {
 						targetPos++;
-						double bval = dProbs[targetPos][sourcePos][targetLen][sourceLen];
+						int b = bucket(targetPos, sourcePos, targetLen, sourceLen);
+						double bval = dProbs[b];
 						double pairProb = alignmentProbs.getCount(source, target) * bval;
 						sourceWordCounts.incrementCount(source, pairProb);
 					}
-					double bval = dProbs[0][sourcePos][targetLen][sourceLen];
+					double bval = dProbs[MAX_SENTENCE_LENGTH+1];
 					double nullPairProb = alignmentProbs.getCount(source, NULL_WORD) * bval;
 					sourceWordCounts.incrementCount(source, nullPairProb);
-//				}
-//				for (String source : sourceWords) {
 					double curSourceCount = sourceWordCounts.getCount(source);
 					targetPos = 0;
 					for (String target : targetWords) {
 						targetPos++;
 						double curAlignmentProb = alignmentProbs.getCount(source, target);
-						bval = dProbs[targetPos][sourcePos][targetLen][sourceLen];
+						int b = bucket(targetPos, sourcePos, targetLen, sourceLen);
+						bval = dProbs[b];
 						double incVal = curAlignmentProb / curSourceCount * bval;
 						alignmentCounts.incrementCount(source, target, incVal);
 						targetWordCounts.incrementCount(target, incVal);
-						dCounts[targetPos][sourcePos][targetLen][sourceLen] += incVal;
-						totalD[targetPos][targetLen][sourceLen] += incVal;
+						dCounts[b] += incVal;
+						totalD += incVal;
 					}
 					double nullAlignmentProb = alignmentProbs.getCount(source, NULL_WORD);
-					bval = dProbs[0][sourcePos][targetLen][sourceLen];
+					bval = dProbs[MAX_SENTENCE_LENGTH+1];
 					double incVal = nullAlignmentProb / curSourceCount * bval;
 					alignmentCounts.incrementCount(source, NULL_WORD, incVal);
 					targetWordCounts.incrementCount(NULL_WORD, incVal);
-					dCounts[0][sourcePos][targetLen][sourceLen] += incVal;
-					totalD[0][targetLen][sourceLen] += incVal;
+					dCounts[MAX_SENTENCE_LENGTH+1] += incVal;
+					totalD += incVal;
 				}
 			}
 			System.out.print("");
@@ -201,49 +195,24 @@ public class IBMModel2WordAligner extends WordAligner {
 			
 			//Smooth distortion counts
 			double l = 1.0;
-			for(int a = 0; a <= MAX_SENTENCE_LENGTH; a++) {
-				for(int b = 0; b <= MAX_SENTENCE_LENGTH; b++) {
-					for(int c = 0; c <= a; c++) {
-						for(int d = 0; d <= b; d++) {
-							double e1 = dCounts[c][d][a][b];
-							if(e1 > 0 && e1 < l) {
-								l = e1;
-							}
-						}
-					}
+			for(int a = 0; a <= MAX_SENTENCE_LENGTH+1; a++) {
+				double e1 = dCounts[a];
+				if(e1 > 0 && e1 < l) {
+					l = e1;
 				}
 			}
 			l = 0.5 * l;
-			for(int a = 0; a <= MAX_SENTENCE_LENGTH; a++) {
-				for(int b = 0; b <= MAX_SENTENCE_LENGTH; b++) {
-					for(int c = 0; c <= a; c++) {
-						for(int d = 0; d <= b; d++) {
-							dCounts[c][d][a][b] += l;
-						}
-						totalD[c][a][b] += l*b;
-					}
-				}
+			for(int a = 0; a <= MAX_SENTENCE_LENGTH+1; a++) {
+				dCounts[a] += l;
 			}
+			totalD += l*(MAX_SENTENCE_LENGTH+1);
 			
 			//Compute new distortion probabilities
-			for(int a = 0; a <= MAX_SENTENCE_LENGTH; a++) {
-				for(int b = 0; b <= MAX_SENTENCE_LENGTH; b++) {
-					for(int c = 0; c <= a; c++) {
-						for(int d = 0; d <= b; d++) {
-							double e1 = dCounts[c][d][a][b];
-							double e2 = totalD[c][a][b];
-							if(e2 == 0.0) {
-								dProbs[c][d][a][b] = 0.0;
-							}
-							else {
-								dProbs[c][d][a][b] = e1 / e2;
-							}
-							dCounts[c][d][a][b] = 0.0;
-						}
-						totalD[c][a][b] = 0.0;
-					}
-				}
+			for(int a = 0; a <= MAX_SENTENCE_LENGTH+1; a++) {
+				dProbs[a] = dCounts[a] / totalD;
+				dCounts[a] = 0.0;
 			}
+			totalD = 0.0;
 		}
 	}	
 }
