@@ -150,11 +150,11 @@ public class IBMModel2WordAligner extends WordAligner {
 				int targetLen = targetWords.size();
 				int sourceLen = sourceWords.size();
 				Counter<String> sourceWordCounts = new Counter<String>();
-				int sourcePos = -1;
+				int sourcePos = 0;
 				for (String source : sourceWords) {
 					sourcePos++;
 					sourceWordCounts.setCount(source, 0.0);
-					int targetPos = -1;
+					int targetPos = 0;
 					for (String target : targetWords) {
 						targetPos++;
 						double bval = dProbs[targetPos][sourcePos][targetLen][sourceLen];
@@ -167,7 +167,7 @@ public class IBMModel2WordAligner extends WordAligner {
 //				}
 //				for (String source : sourceWords) {
 					double curSourceCount = sourceWordCounts.getCount(source);
-					targetPos = -1;
+					targetPos = 0;
 					for (String target : targetWords) {
 						targetPos++;
 						double curAlignmentProb = alignmentProbs.getCount(source, target);
