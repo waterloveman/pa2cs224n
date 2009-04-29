@@ -26,9 +26,6 @@ import java.util.*;
 	    maxAlignProb = curAlignProb;
 	  }
 	}
-	//Deal with NULL_WORD case
-	//if (alignmentProbs.getCount(curSourceWord, NULL_WORD) > maxAlignProb)
-	//  maxAlignPos = -1;
 	alignment.addAlignment(maxAlignPos - 1, i, true);
       }
       return alignment;

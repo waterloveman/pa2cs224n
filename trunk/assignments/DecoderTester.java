@@ -55,9 +55,6 @@ public class DecoderTester {
       throw new RuntimeException(e);
     }
     System.out.println("Created language model: " + model);
-
-    // TODO:
-    // Set any options to your language model here (i.e. discount factors, lambdas, etc.)
     
     // train model .........................................................
     System.out.println("Training language model with "+lmTrainingSentences.size()+" sentences");
@@ -80,9 +77,6 @@ public class DecoderTester {
       throw new RuntimeException(e);
     }
     System.out.println("Created word aligner: " + wordAligner);
-
-    //TODO:
-    // set any options to your word aligner here
 
     // train model .........................................................
     System.out.print("Training word aligner with "+waTrainingSentencePairs.size()+" sentences");
