@@ -15,10 +15,20 @@ public class IBMModel3WordAligner extends WordAligner {
   private double[] dProbs, dCounts;
   public static int MAX_SENTENCE_LENGTH = 3;
   public static int MAX_FERTILITY = 5;
-  public double NULL_PROB = 0.2;
+  public double ZERO_FERT_PROB = 0.2;
   
   public Alignment alignSentencePair(SentencePair sentencePair) {
-    return model2AlignSentencePair(sentencePair);
+    Alignment bestAlign = model2AlignSentencePair(sentencePair);
+    double maxProb = getAlignmentProb(sentencePair.getEnglishWords(), sentencePair.getFrenchWords(), bestAlign);
+    List<Alignment> alignments = produceAlignments(bestAlign, sentencePair.getEnglishWords().size());
+    for (Alignment curAlign : alignments) {
+      double curProb = getAlignmentProb(sentencePair.getEnglishWords(), sentencePair.getFrenchWords(), curAlign);
+      if (curProb > maxProb) {
+	maxProb = curProb;
+	bestAlign = curAlign;
+      }
+    }
+    return bestAlign;
   }
 
   private Alignment model2AlignSentencePair(SentencePair sentencePair) {
@@ -51,8 +61,53 @@ public class IBMModel3WordAligner extends WordAligner {
   }
   
   public double getAlignmentProb(List<String> targetSentence, List<String> sourceSentence, Alignment alignment) {
-    return 0.0;
+    int[] phis = new int[targetSentence.size()];
+    for (int index = 0; index < targetSentence.size(); index++) {
+      String curWord = targetSentence.get(index);
+      Counter<Integer> phiCounts = fertilityProbs.getCounter(curWord);
+      int maxPhi = 0;
+      double maxProb = phiCounts.getCount(new Integer(0));
+      for (int fert = 1; fert <= MAX_FERTILITY; fert++) {
+	double curProb = phiCounts.getCount(new Integer(fert));
+	if (curProb > maxProb) {
+	  maxPhi = fert;
+	  maxProb = curProb;
+	}
+      }
+      phis[index] = maxPhi;
+    }
+    int zeroPhi = 0;
+    for (int index = 0; index < targetSentence.size(); index++) {
+      if (phis[index] == 0) zeroPhi++;
+    }
+    int j = sourceSentence.size();
+    int i = targetSentence.size();
+    double firstTerm = Math.pow(1 - ZERO_FERT_PROB, j - 2 * zeroPhi)
+							* Math.pow(ZERO_FERT_PROB, zeroPhi);
+    //double secondTerm = 1 / factorial(zeroPhi);
+    double secondTerm = 1 / 120;
+    double thirdTerm = 1.0;
+    for (int curI = 0; curI <= i; curI++) {
+      int curPhiCount = 0;
+      for (int blah = 0; blah < phis.length; blah++) {
+	if (phis[blah] == curI) curPhiCount++;
+      }
+      thirdTerm *= factorial(curPhiCount);
+    }
 
+    double fourthTerm = 1.0;
+    for (int curI = 0; curI < i; curI++) {
+      fourthTerm *= fertilityProbs.getCount(targetSentence.get(curI), new Integer(curI));
+    }
+
+    double fifthTerm = 1.0;
+    for (int curJ = 0; curJ < j; curJ++) {
+      int alignTarget = alignment.getAlignedTarget(curJ);
+      String targetWord = (alignTarget == -1 ? NULL_WORD : targetSentence.get(alignTarget));
+      fifthTerm *= alignmentProbs.getCount(sourceSentence.get(curJ), targetWord);
+    }
+
+    return firstTerm * secondTerm * thirdTerm * fourthTerm * fifthTerm;
   }
 
   private double model2GetAlignmentProb(List<String> targetSentence, List<String> sourceSentence, Alignment alignment) {
@@ -146,79 +201,97 @@ public class IBMModel3WordAligner extends WordAligner {
     }
 
     for (int count = 0; count < 50; count++) {
-    for (SentencePair pair : trainingPairs) {
-      List<String> targetWords = pair.getEnglishWords();
-      List<String> sourceWords = pair.getFrenchWords();
-      Alignment viterbiAlign = model2AlignSentencePair(pair);
-      Alignment bestAlign = viterbiAlign;
-      double maxScore = getAlignmentProb(targetWords, sourceWords, bestAlign);
-      while (true) {
-	boolean hadBetter = false;
-	for (int fr = 0; fr < sourceWords.size(); fr++) {
-	  int initEnPos = viterbiAlign.getAlignedTarget(fr);
-	  int initFrPos = fr;
-	  
-	  for (int d1 = -1; d1 <= 1; d1++) {
-	    for (int d2 = -1; d2 <= 1; d2++) {
-		if (d1 == 0 && d2 == 0) continue;
-		int newEnPos = initEnPos+d1;
-		int newFrPos = initFrPos+d2;
-		if (newEnPos >= -1 && newEnPos <= (sourceWords.size() - 1) && newFrPos >= -1 && newFrPos <= (sourceWords.size() - 1)) {
-		  viterbiAlign.removeAlignment(initEnPos, initFrPos);
-		  viterbiAlign.addAlignment(newEnPos, newFrPos, true);
-		  double curScore = getAlignmentProb(targetWords, sourceWords, viterbiAlign);
-		  if (curScore > maxScore) {
-		    hadBetter = true;
-		    maxScore = curScore;
-		    bestAlign = viterbiAlign;
-		  }	
-		  else {
-		    viterbiAlign.removeAlignment(newEnPos, newFrPos);
-		    viterbiAlign.addAlignment(initEnPos, initFrPos, true);
-		  }
-		}
+      for (SentencePair pair : trainingPairs) {
+	List<String> targetWords = pair.getEnglishWords();
+	List<String> sourceWords = pair.getFrenchWords();
+	Alignment viterbiAlign = model2AlignSentencePair(pair);
+	double maxScore = getAlignmentProb(targetWords, sourceWords, viterbiAlign);
+	//Hill-climb
+	while (true) {
+	  boolean hadBetter = false;
+	  List<Alignment> nearbyAlignments = produceAlignments(viterbiAlign, targetWords.size());
+	  for(Alignment curAlignment : nearbyAlignments) {
+	    double curScore = getAlignmentProb(targetWords, sourceWords, viterbiAlign);
+	    if (curScore > maxScore) {
+	      hadBetter = true;
+	      maxScore = curScore;
+	      viterbiAlign = curAlignment;
+	      break;
 	    }
+	  }
+	  if (!hadBetter) break;
+	}
+
+	//Given alignment, compute counts
+	int numNullWords = 0;
+	int[] freqArr = new int[targetWords.size()];
+	for (int a = 0; a < sourceWords.size(); a++) {
+	  int curAlignTarget = viterbiAlign.getAlignedTarget(a);
+	  if(curAlignTarget == -1) {
+	    numNullWords++;
+	  }
+	  else {
+	    if(freqArr[curAlignTarget] < 5) freqArr[curAlignTarget]++;
+	  }	
+	}
+	for (int arr = 0; arr < freqArr.length; arr++) {
+	  fertilityCounts.incrementCount(targetWords.get(arr), freqArr[arr], 1.0);
+	}
+	ZERO_FERT_PROB += (numNullWords/sourceWords.size() - 0.2) / trainingPairs.size();
+
+	//Compute probabilities from counts
+	for (String word : fertilityCounts.keySet()) {
+	  Counter<Integer> curCounter = fertilityCounts.getCounter(word);
+	  double totalCount = curCounter.totalCount();
+	  for(Integer i : curCounter.keySet()) {
+	    double curCount = fertilityCounts.getCount(word, i);
+	    fertilityProbs.setCount(word, i, curCount/totalCount);
 	  }
 	}
-	if (!hadBetter) break;
-      }
-
-      for (int fr = 0; fr < sourceWords.size(); fr++) {
-	int initEnPos = viterbiAlign.getAlignedTarget(fr);
-	int initFrPos = fr;
-	  
-	for (int d1 = -2; d1 <= 2; d1++) {
-	  for (int d2 = -2; d2 <= 2; d2++) {
-	    if (d1 == 0 && d2 == 0) continue;
-	    int newEnPos = initEnPos+d1;
-	    int newFrPos = initFrPos+d2;
-	    if (newEnPos >= -1 && newEnPos <= (sourceWords.size() - 1) && newFrPos >= -1 && newFrPos <= (sourceWords.size() - 1)) {
-	      bestAlign.removeAlignment(initEnPos, initFrPos);
-	      bestAlign.addAlignment(newEnPos, newFrPos, true);
-	      int numNullWords = 0;
-	      int[] freqArr = new int[targetWords.size()];
-	      for (int a = 0; a < sourceWords.size(); a++) {
-		int curAlignTarget = bestAlign.getAlignedTarget(a);
-		System.out.println("source size " + sourceWords.size() + " targ size " + targetWords.size());
-		System.out.println(a + " aligned with " + curAlignTarget);
-		if(curAlignTarget == -1) {
-		  numNullWords++;
-		}
-		else {
-		  if(freqArr[curAlignTarget] < 5) freqArr[curAlignTarget]++;
-		}
-	      }
-	      for (int fInd = 0; fInd < freqArr.length; fInd++) {
-		fertilityCounts.incrementCount(targetWords.get(fInd), freqArr[fInd], 1.0);
-	      }
-	      NULL_PROB += (numNullWords/sourceWords.size() - 0.2) / trainingPairs.size();
-	      bestAlign.removeAlignment(newEnPos, newFrPos);
-	      bestAlign.addAlignment(initEnPos, initFrPos, true);
-	    }
-	  }
-	}			
       }
     }
+  }
+
+  private List<Alignment> produceAlignments(Alignment startAlign, int targetSize) {
+    List<Alignment> toReturn = new ArrayList<Alignment>();
+    int length = startAlign.getSureAlignments().size();
+    for (int fr = 0; fr < length; fr++) {
+      int initEnPos = startAlign.getAlignedTarget(fr);
+
+      for (int delta = -2; delta <= 2; delta++) {
+	if (delta == 0) continue;
+	int newEnPos = initEnPos + delta;
+	if (newEnPos < -1 || newEnPos >= targetSize) continue;
+
+	startAlign.removeAlignment(initEnPos, fr);
+	startAlign.addAlignment(newEnPos, fr, true);
+	toReturn.add(new Alignment(startAlign));
+	startAlign.removeAlignment(newEnPos, fr);
+	startAlign.addAlignment(initEnPos, fr, true);
+      }
+    }
+
+    //alignRecur(startAlign, 0, targetSize, toReturn);
+    return toReturn;
+  }
+
+  private void alignRecur(Alignment startAlign, int curIndex, int targetSize, List<Alignment> curAlignments) {
+    int length = startAlign.getSureAlignments().size();
+    for (int fr = curIndex; fr < length; fr++) {
+      int initEnPos = startAlign.getAlignedTarget(fr);
+
+      for (int delta = 0; delta <= 1; delta++) {
+	if (delta == 0) continue;
+	int newEnPos = initEnPos + delta;
+	if (newEnPos < -1 || newEnPos >= targetSize) continue;
+
+	startAlign.removeAlignment(initEnPos, fr);
+	startAlign.addAlignment(newEnPos, fr, true);
+	curAlignments.add(new Alignment(startAlign));
+	alignRecur(startAlign, curIndex + 1, targetSize, curAlignments);
+	startAlign.removeAlignment(newEnPos, fr);
+	startAlign.addAlignment(initEnPos, fr, true);
+      }
     }
   }
   
@@ -252,10 +325,18 @@ public class IBMModel3WordAligner extends WordAligner {
     return count;
   }
   
+  private int combination(int top, int bottom) {
+    int botTerm = factorial(bottom);
+    int tbTerm = factorial(top - bottom);
+    if (botTerm <= 0 || tbTerm <=0) return 0;
+    System.out.println("b term: " + botTerm + " t term: " + tbTerm);
+    return factorial(top) / (botTerm * tbTerm);
+  }
+
   private int factorial(int input) {
     int result = 1;
     for (int i = 2; i <= input; i++) {
-      result *= input;
+      result *= i;
     }
     return result;
   }
