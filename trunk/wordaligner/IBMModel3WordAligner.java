@@ -165,7 +165,7 @@ public class IBMModel3WordAligner extends WordAligner {
     fertilityCounts = new CounterMap<String, Integer>();
     fertilityProbs = new CounterMap<String, Integer>();
     //Initialize fertility counts and pi count
-    for (SentencePair pair : trainingPairs) {
+    /*for (SentencePair pair : trainingPairs) {
       List<String> targetWords = pair.getEnglishWords();
       List<String> sourceWords = pair.getFrenchWords();
       double alpha[][] = new double[targetWords.size()][MAX_FERTILITY];
@@ -198,7 +198,19 @@ public class IBMModel3WordAligner extends WordAligner {
 	  fertilityCounts.incrementCount(targetWords.get(i), phi, r*sum);
 	}
       }
+    }*/
+
+    for (SentencePair pair : trainingPairs) {
+      List<String> targetWords = pair.getEnglishWords();
+      for(String word : targetWords) {
+	for (int i = 0; i < MAX_FERTILITY + 1; i++) {
+	  fertilityProbs.setCount(word, new Integer(i), (double)1/(MAX_FERTILITY + 1));
+	}
+      }
     }
+
+    //displ
+    System.out.println(fertilityProbs);
 
     for (int count = 0; count < 50; count++) {
       for (SentencePair pair : trainingPairs) {
@@ -245,6 +257,8 @@ public class IBMModel3WordAligner extends WordAligner {
 	  double totalCount = curCounter.totalCount();
 	  for(Integer i : curCounter.keySet()) {
 	    double curCount = fertilityCounts.getCount(word, i);
+	    System.out.println("FOR n("+i+"|"+word+")");
+	    System.out.println("From "+fertilityProbs.getCount(word, i)+" to "+(curCount/totalCount));
 	    fertilityProbs.setCount(word, i, curCount/totalCount);
 	  }
 	}
@@ -258,7 +272,7 @@ public class IBMModel3WordAligner extends WordAligner {
     for (int fr = 0; fr < length; fr++) {
       int initEnPos = startAlign.getAlignedTarget(fr);
 
-      for (int delta = -2; delta <= 2; delta++) {
+      for (int delta = -10; delta <= 10; delta++) {
 	if (delta == 0) continue;
 	int newEnPos = initEnPos + delta;
 	if (newEnPos < -1 || newEnPos >= targetSize) continue;
